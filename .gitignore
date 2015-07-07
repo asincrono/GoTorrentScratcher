@@ -1,0 +1,16 @@
+#bin dir
+bin/
+
+#pkg dir
+pkg
+
+#binary files in the src dir
+src/torrentscratcher/torrentscratcher
+
+src/golang.org/x/net/
+
+src/github.com/andybalholm/cascadia/
+
+src/github.com/neocortical/gsoup/
+
+src/github.com/PuerkitoBio/goquery/
