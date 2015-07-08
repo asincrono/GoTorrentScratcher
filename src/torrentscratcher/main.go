@@ -2,6 +2,7 @@
 package main
 
 import (
+
 	//"bytes"
 	"fmt"
 	"log"
@@ -13,10 +14,11 @@ import (
 	//	"github.com/neocortical/gsoup"
 	//	"io/ioutil"
 
-	"golang.org/x/net/html"
 	"movie"
 	"net/http"
 	"torrent"
+
+	"golang.org/x/net/html"
 )
 
 const (
@@ -107,6 +109,11 @@ func getMovie(path string) (movie movie.Movie) {
 		movie.Title = removeParenthesesAndBracketsContent(title)
 
 		movie.Description = doc.Find("p.descrip").Eq(1).Text()
+
+		movie.Rating = doc.Find("span.valoracion").Text()
+
+		fmt.Println("Movie Rating: ", movie.Rating)
+
 		imgName, _ := doc.Find("img.imagen_ficha").Attr("src")
 
 		movie.Image = EliteTorrentURL + imgName
@@ -141,44 +148,82 @@ func getMovie(path string) (movie movie.Movie) {
 }
 
 func main() {
-	recordPaths := getRecordPaths(1)
-	//	for _, path := range recordPaths {
-	//		movie := getMovie(path)
-	//		fmt.Println(movie)
+
+	str := "/title/tt3774694/?ref_=fn_al_tt_1"
+	imdbId := str[len("/title/") : strings.Index(str, "?")-1]
+	fmt.Println("ImdbId: ", imdbId)
+
+	i := 0
+	for {
+		fmt.Println("Iter: ", i)
+		if i >= 10 {
+			break
+		} else {
+			i += 1
+		}
+	}
+
+	var m movie.Movie
+
+	m.OriginalTitle = "Love"
+
+	m.EnrichWithImdbSearch()
+
+	fmt.Printf("%+v\n", m)
+	//url := "http://www.omdbapi.com/?t=Love&y=2015&plot=short&r=json"
+
+	//	paths := getRecordPaths(1)
+
+	//	movies := make([]movie.Movie, len(paths))
+
+	//	for i, path := range paths {
+	//		movies[i] = getMovie(path)
+	//		movies[i].EnrichWithOmdbApi()
+	//		fmt.Printf("%+v\n", movies[i])
 	//	}
 
-	movie := getMovie(recordPaths[0])
+	//	if res, err := http.Get(url); err != nil {
+	//		log.Fatal("Omdbapi didn't return any data:", err)
+	//	} else {
+	//		defer res.Body.Close()
 
-	fmt.Println(movie)
+	//		var m movie.Movie
+
+	//		jsonRaw, err := ioutil.ReadAll(res.Body)
+
+	//		if err != nil {
+	//			log.Fatal(err)
+	//		}
+
+	//		if err = json.Unmarshal(jsonRaw, &m); err != nil {
+	//			if _, ok := err.(*json.UnmarshalTypeError); ok {
+	//				log.Print(err)
+	//			} else {
+	//				log.Fatal(err)
+	//			}
+	//		}
+
+	//		fmt.Printf("%+v\n", m)
+	//	}
+
+	//{"Title":"Love",
+	//"Year":"2015",
+	//"Rated":"N/A",
+	//"Released":"15 Jul 2015",
+	//"Runtime":"130 min",
+	//"Genre":"Drama",
+	//"Director":"Gaspar Noé",
+	//"Writer":"Gaspar Noé",
+	//"Actors":"Gaspar Noé, Karl Glusman, Aomi Muyock, Klara Kristin",
+	//"Plot":"A sexual melodrama about a boy and a girl and another girl. It's a love story, which celebrates sex in a joyous way.",
+	//"Language":"English",
+	//"Country":"France, Belgium",
+	//"Awards":"1 nomination.",
+	//"Poster":"http://ia.media-imdb.com/images/M/MV5BMTQzNDUwODk5NF5BMl5BanBnXkFtZTgwNzA0MDQ2NTE@._V1_SX300.jpg",
+	//"Metascore":"54",
+	//"imdbRating":"7.0",
+	//"imdbVotes":"122",
+	//"imdbID":"tt3774694",
+	//"Type":"movie","Response":"True"}
 
 }
-
-/*
-public Movie getMovie(String path) throws IOException {
-        String url = "http://www.elitetorrent.net{path}";
-        url = url.replace("{path}", path);
-        log.debug("Retrieving " + path + ".");
-        Document doc = Jsoup.connect(url).get();
-
-        Movie movie = new Movie();
-        String title = doc.select("#box-ficha > h2").text();
-        // strip parentheses: http://stackoverflow.com/questions/1138552/replace-string-in-parentheses-using-regex
-        title = title
-                .replaceAll("\\([^\\(]*\\)", "")
-                .replaceAll("\\[[^\\(]*\\]", "")
-                .replaceAll("aka$", "")
-                .trim();
-        movie.setTitle(title);
-        movie.setUrl(url);
-        movie.setDescription(doc.select("p.descrip").eq(1).text());
-        movie.setType("movie");
-        movie.setImage("http://www.elitetorrent.net/" + doc.select("img.imagen_ficha").attr("src"));
-
-        Torrent torrent = new Torrent();
-        torrent.setMagnet(doc.select("a[href^=magnet]").attr("href"));
-        torrent.setFilesize(doc.select("dl.info-tecnica dd").eq(3).text());
-        movie.getTorrents().put("720p", torrent);
-
-        return movie;
-    }
-*/
