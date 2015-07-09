@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	FilmAffinityURL = "http://www.filmaffinity.com"
-	IMDBURL         = "http://www.imdb.com/"
+	FilmAffinityURL    = "http://www.filmaffinity.com"
+	FilmAffinitySearch = "es/search.php?stext=%s&stype=all"
+
 	EliteTorrentURL = "http://www.elitetorrent.net"
 	CategoriaHDRIP  = "categoria/13/peliculas-hdrip"
 	ModeList        = "modo:listado"
@@ -210,6 +211,88 @@ func (m *Movie) GetMovieFromPath(path string) {
 		m.AddTorrent("720p", &torrent)
 	}
 }
+
+func (m *Movie) EnrichWithFilmAffinity() {
+	var title string
+
+	if m.OriginalTitle != "" {
+		title = m.OriginalTitle
+	} else {
+		title = m.Title
+	}
+
+	query := fmt.Sprintf(FilmAffinitySearch, title)
+	url := strings.Join([]string{FilmAffinityURL, query}, "/")
+
+	if doc, err := goquery.NewDocument(url); err != nil {
+		log.Fatal(err)
+	} else {
+		selection := doc.Find("[property=og:title]").Find(".item-search").Find(".mc-title").Find(".mc-title a")
+		if selection.Length() > 1 {
+			selection.EachWithBreak(func(i int, s *goquery.Selection) bool {
+				newTitle := s.First().Text()
+				fmt.Println("Title:", newTitle)
+				if title == newTitle {
+					return false
+				} else {
+					return true
+				}
+			})
+		}
+		movieUrl, ok := selection.Attr("href")
+		if !ok {
+			log.Fatal("No se encuentra la url de la peli.")
+		}
+		url = strings.Join([]string{FilmAffinityURL, movieUrl}, "/")
+		doc, err := goquery.NewDocument(url)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		m.FilmAffinityId, _ = doc.Find("div.rate-movie-box").Attr("data-movie-id")
+		titleByte := []byte(doc.Find("dd").Eq(0).Text())
+
+		parenthesesExpr, _ := regexp.Compile("\\(.*?\\)")
+		bracketsExpr, _ := regexp.Compile("\\[.*?\\]")
+
+		titleByte = parenthesesExpr.ReplaceAll(titleByte, []byte(""))
+		titleByte = bracketsExpr.ReplaceAll(titleByte, []byte(""))
+		m.OriginalTitle = string(titleByte)
+	}
+}
+
+//public Movie enrichMovieWithFilmAffinity(Movie movie) {
+//        try {
+//            String url = "http://www.filmaffinity.com/es/search.php?stext={title}&stype=all";
+//            String title = URLEncoder.encode(movie.getTitle(), "UTF8");
+//            url = url.replace("{title}", title);
+//            Document doc = Jsoup.connect(url).get();
+//            if (doc.select("[property=og:title]").size() == 0) {
+//                // several results found, take the first
+//                Element firstResult = doc.select(".item-search .mc-title a").first();
+//                if (firstResult == null) {
+//                    // filmaffinity search engine failed
+//                    log.warn("FilmAffinity 404: " + movie.getTitle());
+//                    return movie;
+//                }
+//                url = "http://www.filmaffinity.com" + firstResult.attr("href");
+//                doc = Jsoup.connect(url).get();
+//            }
+//            movie.setFilmAffinityId(doc.select("div.rate-movie-box").attr("data-movie-id"));
+//            Elements movieInfo = doc.select("dl.movie-info");
+//            String originalTitle = movieInfo.select("dd").eq(0).text();
+//            originalTitle = originalTitle
+//                    .replaceAll("\\([^\\(]*\\)", "")
+//                    .replaceAll("\\[[^\\(]*\\]", "")
+//                    .replaceAll("aka$", "")
+//                    .trim();
+//            movie.setOriginalTitle(originalTitle);
+//            movie.setDescription(movieInfo.select("dd").eq(11).text());
+//        } catch (IOException ex) {
+//            log.warn(ex.getMessage());
+//        }
+//        return movie;
+//    }
 
 func (m *Movie) EnrichWithImdbSearch() {
 	var title string
