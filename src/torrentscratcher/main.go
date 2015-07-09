@@ -2,17 +2,15 @@
 package main
 
 import (
-
-	//"bytes"
+	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
-	//	"github.com/neocortical/gsoup"
-	//	"io/ioutil"
 
 	"movie"
 	"net/http"
@@ -63,7 +61,6 @@ func getRecordPaths(page uint16) (paths []string) {
 
 		selection.Each(func(i int, s *goquery.Selection) {
 			paths[i], _ = s.Attr("href")
-			fmt.Printf("Path (%d): %s.\n", i, paths[i])
 		})
 	}
 
@@ -107,12 +104,8 @@ func getMovie(path string) (movie movie.Movie) {
 		title := doc.Find("#box-ficha > h2").Text()
 
 		movie.Title = removeParenthesesAndBracketsContent(title)
-
 		movie.Description = doc.Find("p.descrip").Eq(1).Text()
-
 		movie.Rating = doc.Find("span.valoracion").Text()
-
-		fmt.Println("Movie Rating: ", movie.Rating)
 
 		imgName, _ := doc.Find("img.imagen_ficha").Attr("src")
 
@@ -127,20 +120,12 @@ func getMovie(path string) (movie movie.Movie) {
 
 		seedsClientsArr := strings.Fields(seedsClientsText)
 
-		for i, str := range seedsClientsArr {
-			fmt.Println(i, ":", str)
-		}
-
 		seeds, _ := strconv.Atoi(seedsClientsArr[1])
 		peers, _ := strconv.Atoi(seedsClientsArr[4])
 
 		torrent.Seeds = uint16(seeds)
 		torrent.Peers = uint16(peers)
 
-		fmt.Println("Seeds:", seeds)
-		fmt.Println("Clients:", peers)
-
-		fmt.Println(torrent)
 		movie.AddTorrent("720p", &torrent)
 	}
 
@@ -148,82 +133,39 @@ func getMovie(path string) (movie movie.Movie) {
 }
 
 func main() {
-
-	str := "/title/tt3774694/?ref_=fn_al_tt_1"
-	imdbId := str[len("/title/") : strings.Index(str, "?")-1]
-	fmt.Println("ImdbId: ", imdbId)
-
-	i := 0
-	for {
-		fmt.Println("Iter: ", i)
-		if i >= 10 {
-			break
-		} else {
-			i += 1
-		}
-	}
-
 	var m movie.Movie
+	var page uint16
+	var paths []string
+	var jsonMovieRaw []byte
 
-	m.OriginalTitle = "Love"
+	fileName := ".\\movies.json"
 
-	m.EnrichWithImdbSearch()
+	file, err := os.OpenFile(fileName, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
+	if err != nil {
+		log.Fatal(err)
+	}
+	page = 1
+	for {
+		paths = getRecordPaths(page)
+		if len(paths) == 0 {
+			break
+		}
 
-	fmt.Printf("%+v\n", m)
-	//url := "http://www.omdbapi.com/?t=Love&y=2015&plot=short&r=json"
+		// Pruebas
+		if page == 3 {
+			break
+		}
 
-	//	paths := getRecordPaths(1)
+		for _, path := range paths {
+			m = getMovie(path)
 
-	//	movies := make([]movie.Movie, len(paths))
+			m.EnrichWithImdbSearch()
+			m.EnrichWithOmdbApi()
 
-	//	for i, path := range paths {
-	//		movies[i] = getMovie(path)
-	//		movies[i].EnrichWithOmdbApi()
-	//		fmt.Printf("%+v\n", movies[i])
-	//	}
+			jsonMovieRaw, _ = json.Marshal(m)
+			fmt.Fprintln(file, string(jsonMovieRaw))
+		}
 
-	//	if res, err := http.Get(url); err != nil {
-	//		log.Fatal("Omdbapi didn't return any data:", err)
-	//	} else {
-	//		defer res.Body.Close()
-
-	//		var m movie.Movie
-
-	//		jsonRaw, err := ioutil.ReadAll(res.Body)
-
-	//		if err != nil {
-	//			log.Fatal(err)
-	//		}
-
-	//		if err = json.Unmarshal(jsonRaw, &m); err != nil {
-	//			if _, ok := err.(*json.UnmarshalTypeError); ok {
-	//				log.Print(err)
-	//			} else {
-	//				log.Fatal(err)
-	//			}
-	//		}
-
-	//		fmt.Printf("%+v\n", m)
-	//	}
-
-	//{"Title":"Love",
-	//"Year":"2015",
-	//"Rated":"N/A",
-	//"Released":"15 Jul 2015",
-	//"Runtime":"130 min",
-	//"Genre":"Drama",
-	//"Director":"Gaspar Noé",
-	//"Writer":"Gaspar Noé",
-	//"Actors":"Gaspar Noé, Karl Glusman, Aomi Muyock, Klara Kristin",
-	//"Plot":"A sexual melodrama about a boy and a girl and another girl. It's a love story, which celebrates sex in a joyous way.",
-	//"Language":"English",
-	//"Country":"France, Belgium",
-	//"Awards":"1 nomination.",
-	//"Poster":"http://ia.media-imdb.com/images/M/MV5BMTQzNDUwODk5NF5BMl5BanBnXkFtZTgwNzA0MDQ2NTE@._V1_SX300.jpg",
-	//"Metascore":"54",
-	//"imdbRating":"7.0",
-	//"imdbVotes":"122",
-	//"imdbID":"tt3774694",
-	//"Type":"movie","Response":"True"}
-
+		page += 1
+	}
 }

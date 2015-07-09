@@ -11,11 +11,20 @@ import (
 	"strings"
 	"torrent"
 
+	"regexp"
+
 	"github.com/PuerkitoBio/goquery"
-	//"net/rpc/jsonrpc"
 )
 
 const (
+	FilmAffinityURL = "http://www.filmaffinity.com"
+	IMDBURL         = "http://www.imdb.com/"
+	EliteTorrentURL = "http://www.elitetorrent.net"
+	CategoriaHDRIP  = "categoria/13/peliculas-hdrip"
+	ModeList        = "modo:listado"
+	OrderScore      = "orden:valoracion"
+	Page            = "pag:"
+
 	OMDBApiUrl   = "http://www.omdbapi.com"
 	OMDBApiQuery = "?t=%s&type=movie"
 
@@ -23,26 +32,6 @@ const (
 	IMDBQuery         = "find?q=%s&s=all"
 	IMDBAdvancedQuery = "search/title?production_status=released&sort=year,desc&title=%s&title_type=feature&view=simple"
 )
-
-//{"Title":"Love",
-//"Year":"2015",
-//"Rated":"N/A",
-//"Released":"15 Jul 2015",
-//"Runtime":"130 min",
-//"Genre":"Drama",
-//"Director":"Gaspar Noé",
-//"Writer":"Gaspar Noé",
-//"Actors":"Gaspar Noé, Karl Glusman, Aomi Muyock, Klara Kristin",
-//"Plot":"A sexual melodrama about a boy and a girl and another girl. It's a love story, which celebrates sex in a joyous way.",
-//"Language":"English",
-//"Country":"France, Belgium",
-//"Awards":"1 nomination.",
-//"Poster":"http://ia.media-imdb.com/images/M/MV5BMTQzNDUwODk5NF5BMl5BanBnXkFtZTgwNzA0MDQ2NTE@._V1_SX300.jpg",
-//"Metascore":"54",
-//"imdbRating":"7.0",
-//"imdbVotes":"122",
-//"imdbID":"tt3774694",
-//"Type":"movie","Response":"True"}
 
 type Movie struct {
 	ImdbId         string
@@ -74,9 +63,15 @@ type Movie struct {
 	Description string
 	Url         string
 	ImdbUrl     string
+	FileSize    string
 	Torrents    map[string]*torrent.Torrent
 
 	updated bool
+}
+
+func (m *Movie) GetFileSize() float32 {
+	val, _ := strconv.ParseFloat(m.FileSize, 32)
+	return float32(val)
 }
 
 func (m *Movie) IsUpdated() bool {
@@ -87,22 +82,24 @@ func (m *Movie) setUpdated() {
 	m.updated = true
 }
 
-func (m *Movie) GetRating() (rating float32, err error) {
-	val, err := strconv.ParseFloat(m.Rating, 32)
-	rating = float32(val)
-	return
+func (m *Movie) GetRating() float32 {
+	val, _ := strconv.ParseFloat(m.Rating, 32)
+	return float32(val)
 }
 
-func (m *Movie) GetMetascore() (rating int, err error) {
-	val, err := strconv.ParseInt(m.Metascore, 10, 0)
-	rating = int(val)
-	return
+func (m *Movie) GetMetascore() (rating int) {
+	val, _ := strconv.ParseInt(m.Metascore, 10, 0)
+	return int(val)
 }
 
-func (m *Movie) GetImdbRating() (rating float32, err error) {
-	val, err := strconv.ParseFloat(m.ImdbRating, 32)
-	rating = float32(val)
-	return
+func (m *Movie) GetImdbRating() (rating float32) {
+	val, _ := strconv.ParseFloat(m.ImdbRating, 32)
+	return float32(val)
+}
+
+func (m *Movie) Get() uint8 {
+	val, _ := strconv.ParseUint(m.ImdbVotes, 10, 8)
+	return uint8(val)
 }
 
 func (m *Movie) GetImdbVotes() (rating uint8, err error) {
@@ -139,8 +136,6 @@ func (m *Movie) EnrichWithOmdbApi() {
 			log.Fatal(err)
 		}
 
-		var jsonMovie interface{}
-
 		if err := json.Unmarshal(rawJson, m); err != nil {
 			if _, ok := err.(*json.UnmarshalTypeError); ok {
 				m.updated = true
@@ -150,30 +145,71 @@ func (m *Movie) EnrichWithOmdbApi() {
 		} else {
 			m.updated = false
 		}
-
-		fmt.Printf("%+v\n", jsonMovie)
 	}
 }
 
-//    public Movie enrichMovieWithImdbAPI(Movie movie) {
-//        try {
-//            String url = "http://www.omdbapi.com/?t={title}&type=movie";
-//            String title = movie.getOriginalTitle() != null ? movie.getOriginalTitle() : movie.getTitle();
-//            url = url.replace("{title}", java.net.URLEncoder.encode(title, "UTF-8"));
-//            JsonNode imdb = om.readTree(new URL(url));
-//            if (imdb.get("Error") != null) {
-//                log.warn("IMDB API 404: " + movie.getTitle());
-//            } else {
-//                movie.setYear(imdb.get("Year").asText());
-//                movie.setGenre(imdb.get("Genre").asText());
-//                movie.setRating(imdb.get("imdbRating").asDouble());
-//                movie.setImdbId(imdb.get("imdbID").asText());
-//            }
-//        } catch (IOException ex) {
-//            log.warn(ex.getMessage());
-//        }
-//        return movie;
-//    }
+func removeParenthesesAndBracketsContent(s string) (out string) {
+	modStr := []byte(s)
+	parenthesesExpr, err := regexp.Compile("\\(.*?\\)")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	bracketsExpr, err := regexp.Compile("\\[.*?\\]")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	modStr = parenthesesExpr.ReplaceAll(modStr, []byte(""))
+	modStr = bracketsExpr.ReplaceAll(modStr, []byte(""))
+	out = string(modStr)
+	return
+}
+
+func (m *Movie) GetMovieFromPath(path string) {
+	url := EliteTorrentURL + path
+	log.Println("Retrieving", path+".")
+
+	if res, err := http.Get(url); err != nil {
+		log.Fatal(err)
+	} else {
+
+		doc, err := goquery.NewDocumentFromResponse(res)
+
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		m.Url = url
+
+		title := doc.Find("#box-ficha > h2").Text()
+
+		m.Title = removeParenthesesAndBracketsContent(title)
+		m.Description = doc.Find("p.descrip").Eq(1).Text()
+		m.Rating = doc.Find("span.valoracion").Text()
+
+		imgName, _ := doc.Find("img.imagen_ficha").Attr("src")
+
+		m.Image = EliteTorrentURL + imgName
+
+		var torrent torrent.Torrent
+
+		torrent.Magnet, _ = doc.Find("a[href^=magnet]").Attr("href")
+		torrent.Filesize = doc.Find("dl.info-tecnica dd").Eq(3).Text()
+
+		seedsClientsText := doc.Find("div.ppal").Text()
+
+		seedsClientsArr := strings.Fields(seedsClientsText)
+
+		seeds, _ := strconv.Atoi(seedsClientsArr[1])
+		peers, _ := strconv.Atoi(seedsClientsArr[4])
+
+		torrent.Seeds = uint16(seeds)
+		torrent.Peers = uint16(peers)
+
+		m.AddTorrent("720p", &torrent)
+	}
+}
 
 func (m *Movie) EnrichWithImdbSearch() {
 	var title string
@@ -186,8 +222,6 @@ func (m *Movie) EnrichWithImdbSearch() {
 
 	query := fmt.Sprintf(IMDBAdvancedQuery, title)
 	url := strings.Join([]string{IMDBUrl, query}, "/")
-
-	fmt.Println("URL: ", url)
 
 	if doc, err := goquery.NewDocument(url); err != nil {
 		log.Fatal(err)
@@ -205,10 +239,6 @@ func (m *Movie) EnrichWithImdbSearch() {
 		selection.EachWithBreak(func(i int, selection *goquery.Selection) bool {
 			title = selection.First().Text()
 			link, _ = selection.Attr("href")
-
-			fmt.Println("Title:", title)
-			fmt.Println("Link:", link)
-
 			if title == m.OriginalTitle {
 				return false
 			}
@@ -229,30 +259,3 @@ func (m *Movie) EnrichWithImdbSearch() {
 		}
 	}
 }
-
-//public Movie enrichMovieWithImdbSearch(Movie movie) {
-//        try {
-//            String url = "http://www.imdb.com/find?q={title}&s=all";
-//            String title = movie.getOriginalTitle() != null ? movie.getOriginalTitle() : movie.getTitle();
-//            url = url.replace("{title}", java.net.URLEncoder.encode(title, "UTF-8"));
-//            Document doc = Jsoup.connect(url).get();
-//            Elements results = doc.select(".result_text a");
-//            if (results.size() == 0) {
-//                log.warn("IMDB search 404: " + movie.getTitle());
-//                return movie;
-//            }
-//            String link = results.first().attr("href");
-//            String imdbId = link.substring("/title/".length(), link.indexOf("?") - 1);
-//            movie.setImdbId(imdbId);
-//            url = "http://www.imdb.com" + link;
-//            doc = Jsoup.connect(url).get();
-//            movie.setGenre(doc.select("[itemprop=genre]").eq(0).text());
-//            String rating = doc.select("[itemprop=aggregateRating] [itemprop=ratingValue]").text();
-//            if (rating.isEmpty() == false) {
-//                movie.setRating(Double.valueOf(rating.replace(',', '.')));
-//            }
-//        } catch (IOException ex) {
-//            log.warn(ex.getMessage());
-//        }
-//        return movie;
-//    }
