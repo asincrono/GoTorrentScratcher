@@ -17,8 +17,10 @@ import (
 )
 
 const (
-	FilmAffinityURL    = "http://www.filmaffinity.com"
-	FilmAffinitySearch = "es/search.php?stext=%s&stype=all"
+	UrlSep                 = "/"
+	FilmAffinityURL        = "http://www.filmaffinity.com"
+	FilmAffinitySearch     = "es/search.php?stext=%s&stype=all"
+	FilmAffinityOderByYear = "oderby=year"
 
 	EliteTorrentURL = "http://www.elitetorrent.net"
 	CategoriaHDRIP  = "categoria/13/peliculas-hdrip"
@@ -126,7 +128,7 @@ func (m *Movie) EnrichWithOmdbApi() {
 
 	query := fmt.Sprintf(OMDBApiQuery, title)
 
-	url := strings.Join([]string{OMDBApiUrl, query}, "/")
+	url := strings.Join([]string{OMDBApiUrl, query}, UrlSep)
 	if res, err := http.Get(url); err != nil {
 		log.Fatal(err)
 	} else {
@@ -222,15 +224,22 @@ func (m *Movie) EnrichWithFilmAffinity() {
 	}
 
 	query := fmt.Sprintf(FilmAffinitySearch, title)
-	url := strings.Join([]string{FilmAffinityURL, query}, "/")
+	url := strings.Join([]string{FilmAffinityURL, query}, UrlSep)
 
 	if doc, err := goquery.NewDocument(url); err != nil {
 		log.Fatal(err)
 	} else {
-		selection := doc.Find("[property=og:title]").Find(".item-search").Find(".mc-title").Find(".mc-title a")
-		if selection.Length() > 1 {
+		selection := doc.Find("[property='og:title']").Find(".item-search").Find(".mc-title").Find(".mc-title a")
+		// Property og:title imply that we have only one match -> We are at the movie page.
+		if selection.Length() == 0 {
+			// Many results
+			selection = doc.Find(".item-search .mc-title a")
+			if selection.Length() == 0 {
+				log.Fatal("No encuentra nada.")
+			}
 			selection.EachWithBreak(func(i int, s *goquery.Selection) bool {
-				newTitle := s.First().Text()
+				newTitle := cleanTitle(s.First().Text())
+
 				fmt.Println("Title:", newTitle)
 				if title == newTitle {
 					return false
@@ -238,27 +247,47 @@ func (m *Movie) EnrichWithFilmAffinity() {
 					return true
 				}
 			})
+			// Once we find the right title.
+
+		} else {
+			// One result.
 		}
 		movieUrl, ok := selection.Attr("href")
 		if !ok {
 			log.Fatal("No se encuentra la url de la peli.")
 		}
-		url = strings.Join([]string{FilmAffinityURL, movieUrl}, "/")
+		url = strings.Join([]string{FilmAffinityURL, movieUrl}, UrlSep)
 		doc, err := goquery.NewDocument(url)
 		if err != nil {
 			log.Fatal(err)
 		}
 
 		m.FilmAffinityId, _ = doc.Find("div.rate-movie-box").Attr("data-movie-id")
-		titleByte := []byte(doc.Find("dd").Eq(0).Text())
+		title := doc.Find("dd").Eq(0).Text()
 
-		parenthesesExpr, _ := regexp.Compile("\\(.*?\\)")
-		bracketsExpr, _ := regexp.Compile("\\[.*?\\]")
-
-		titleByte = parenthesesExpr.ReplaceAll(titleByte, []byte(""))
-		titleByte = bracketsExpr.ReplaceAll(titleByte, []byte(""))
-		m.OriginalTitle = string(titleByte)
+		m.OriginalTitle = cleanTitle(title)
 	}
+}
+
+func cleanTitle(title string) string {
+
+	cleanTitleByte := []byte(title)
+	parenthesesExpr, _ := regexp.Compile("\\(.*?\\)")
+	bracketsExpr, _ := regexp.Compile("\\[.*?\\]")
+
+	cleanTitleByte = parenthesesExpr.ReplaceAll(cleanTitleByte, []byte(""))
+	cleanTitleByte = bracketsExpr.ReplaceAll(cleanTitleByte, []byte(""))
+
+	cleanTitleStr := string(cleanTitleByte)
+
+	cleanTitleStr = strings.TrimFunc(cleanTitleStr, func(r rune) bool {
+		if r == ' ' || r == '\n' || r == '\t' {
+			return true
+		} else {
+			return false
+		}
+	})
+	return cleanTitleStr
 }
 
 //public Movie enrichMovieWithFilmAffinity(Movie movie) {

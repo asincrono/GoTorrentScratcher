@@ -2,10 +2,8 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -134,38 +132,43 @@ func getMovie(path string) (movie movie.Movie) {
 
 func main() {
 	var m movie.Movie
-	var page uint16
-	var paths []string
-	var jsonMovieRaw []byte
+	//	var page uint16
+	//	var paths []string
+	//	var jsonMovieRaw []byte
 
-	fileName := ".\\movies.json"
+	//fileName := ".\\movies.json"
+	//	fileName := "./movies.json"
 
-	file, err := os.OpenFile(fileName, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
-	if err != nil {
-		log.Fatal(err)
-	}
-	page = 1
-	for {
-		paths = getRecordPaths(page)
-		if len(paths) == 0 {
-			break
-		}
+	//	file, err := os.OpenFile(fileName, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
+	//	if err != nil {
+	//		log.Fatal(err)
+	//	}
 
-		// Pruebas
-		if page == 3 {
-			break
-		}
+	m.OriginalTitle = "Love"
+	m.EnrichWithFilmAffinity()
+	fmt.Printf("%+v\n", m)
+	//	page = 1
+	//	for {
+	//		paths = getRecordPaths(page)
+	//		if len(paths) == 0 {
+	//			break
+	//		}
 
-		for _, path := range paths {
-			m = getMovie(path)
+	//		// Pruebas
+	//		if page == 3 {
+	//			break
+	//		}
 
-			m.EnrichWithImdbSearch()
-			m.EnrichWithOmdbApi()
+	//		for _, path := range paths {
+	//			m = getMovie(path)
 
-			jsonMovieRaw, _ = json.Marshal(m)
-			fmt.Fprintln(file, string(jsonMovieRaw))
-		}
+	//			m.EnrichWithImdbSearch()
+	//			m.EnrichWithOmdbApi()
 
-		page += 1
-	}
+	//			jsonMovieRaw, _ = json.Marshal(m)
+	//			fmt.Fprintln(file, string(jsonMovieRaw))
+	//		}
+
+	//		page += 1
+	//	}
 }
