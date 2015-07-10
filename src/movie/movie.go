@@ -19,7 +19,7 @@ import (
 const (
 	UrlSep                 = "/"
 	FilmAffinityURL        = "http://www.filmaffinity.com"
-	FilmAffinitySearch     = "es/search.php?stext=%s&stype=all"
+	FilmAffinitySearch     = "es/search.php?stext=%s&stype=title"
 	FilmAffinityOderByYear = "oderby=year"
 
 	EliteTorrentURL = "http://www.elitetorrent.net"
@@ -65,6 +65,7 @@ type Movie struct {
 	Image       string
 	Description string
 	Url         string
+	Web         string
 	ImdbUrl     string
 	FileSize    string
 	Torrents    map[string]*torrent.Torrent
@@ -118,6 +119,49 @@ func (m *Movie) AddTorrent(key string, t *torrent.Torrent) {
 	m.Torrents[key] = t
 }
 
+//func removeParenthesesAndBracketsContent(s string) (out string) {
+//	modStr := []byte(s)
+//	parenthesesExpr, err := regexp.Compile("\\(.*?\\)")
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+
+//	bracketsExpr, err := regexp.Compile("\\[.*?\\]")
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+
+//	modStr = parenthesesExpr.ReplaceAll(modStr, []byte(""))
+//	modStr = bracketsExpr.ReplaceAll(modStr, []byte(""))
+//	out = string(modStr)
+//	return
+//}
+
+func cleanStr(str string) string {
+	return strings.TrimFunc(str, func(r rune) bool {
+		if r == ' ' || r == '\n' || r == '\t' {
+			return true
+		} else {
+			return false
+		}
+	})
+}
+
+func cleanTitle(title string) string {
+
+	byteStr := []byte(title)
+	parenthesesRegex, _ := regexp.Compile("\\(.*?\\)")
+	bracketsRegex, _ := regexp.Compile("\\[.*?\\]")
+
+	byteStr = parenthesesRegex.ReplaceAll(byteStr, []byte(""))
+	byteStr = bracketsRegex.ReplaceAll(byteStr, []byte(""))
+
+	cleanTitle := string(byteStr)
+
+	cleanTitle = cleanStr(cleanTitle)
+	return cleanTitle
+}
+
 func (m *Movie) EnrichWithOmdbApi() {
 	var title string
 	if m.OriginalTitle != "" {
@@ -151,24 +195,6 @@ func (m *Movie) EnrichWithOmdbApi() {
 	}
 }
 
-func removeParenthesesAndBracketsContent(s string) (out string) {
-	modStr := []byte(s)
-	parenthesesExpr, err := regexp.Compile("\\(.*?\\)")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	bracketsExpr, err := regexp.Compile("\\[.*?\\]")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	modStr = parenthesesExpr.ReplaceAll(modStr, []byte(""))
-	modStr = bracketsExpr.ReplaceAll(modStr, []byte(""))
-	out = string(modStr)
-	return
-}
-
 func (m *Movie) GetMovieFromPath(path string) {
 	url := EliteTorrentURL + path
 	log.Println("Retrieving", path+".")
@@ -187,7 +213,7 @@ func (m *Movie) GetMovieFromPath(path string) {
 
 		title := doc.Find("#box-ficha > h2").Text()
 
-		m.Title = removeParenthesesAndBracketsContent(title)
+		m.Title = cleanTitle(title)
 		m.Description = doc.Find("p.descrip").Eq(1).Text()
 		m.Rating = doc.Find("span.valoracion").Text()
 
@@ -214,7 +240,7 @@ func (m *Movie) GetMovieFromPath(path string) {
 	}
 }
 
-func (m *Movie) EnrichWithFilmAffinity() {
+func (m *Movie) EnrichWithFilmAffinity(overwrite bool) {
 	var title string
 
 	if m.OriginalTitle != "" {
@@ -225,14 +251,16 @@ func (m *Movie) EnrichWithFilmAffinity() {
 
 	query := fmt.Sprintf(FilmAffinitySearch, title)
 	url := strings.Join([]string{FilmAffinityURL, query}, UrlSep)
+	fmt.Println("url:", url)
 
 	if doc, err := goquery.NewDocument(url); err != nil {
 		log.Fatal(err)
 	} else {
 		selection := doc.Find("[property='og:title']").Find(".item-search").Find(".mc-title").Find(".mc-title a")
-		// Property og:title imply that we have only one match -> We are at the movie page.
+		// Property og:title implies that we have only one match -> We are at the movie page.
+		found := false
 		if selection.Length() == 0 {
-			// Many results
+			// We are not at the title page, we have more than one result.
 			selection = doc.Find(".item-search .mc-title a")
 			if selection.Length() == 0 {
 				log.Fatal("No encuentra nada.")
@@ -241,89 +269,108 @@ func (m *Movie) EnrichWithFilmAffinity() {
 				newTitle := cleanTitle(s.First().Text())
 
 				fmt.Println("Title:", newTitle)
+				// Once we find the right title we get out.
 				if title == newTitle {
+					found = true
+
+					// IMPORTANTE
+					// Here we stablish the right movie selection
+					selection = s
 					return false
 				} else {
 					return true
 				}
 			})
-			// Once we find the right title.
 
+			movieUrl, ok := selection.Attr("href")
+			if !ok {
+				log.Fatal("No se encuentra la url de la peli.")
+			}
+			url = strings.Join([]string{FilmAffinityURL, movieUrl}, UrlSep)
+			// Now we get the right movie page.
+			doc, err = goquery.NewDocument(url)
+			if err != nil {
+				log.Fatal(err)
+			}
 		} else {
 			// One result.
-		}
-		movieUrl, ok := selection.Attr("href")
-		if !ok {
-			log.Fatal("No se encuentra la url de la peli.")
-		}
-		url = strings.Join([]string{FilmAffinityURL, movieUrl}, UrlSep)
-		doc, err := goquery.NewDocument(url)
-		if err != nil {
-			log.Fatal(err)
+			found = true
 		}
 
-		m.FilmAffinityId, _ = doc.Find("div.rate-movie-box").Attr("data-movie-id")
-		title := doc.Find("dd").Eq(0).Text()
+		if !found {
+			log.Fatal("Movie not found!")
+		}
 
-		m.OriginalTitle = cleanTitle(title)
+		selection = doc.Find("dl.movie-info").First().Children()
+		if selection.Length() == 0 {
+			log.Println("No encuentra nada para dl.movie_info")
+		}
+
+		selection.Each(func(i int, s *goquery.Selection) {
+			fmt.Printf("\"%s\"\n", s.First().Text())
+
+			switch s.First().Text() {
+			case "Año":
+				if overwrite || m.Year == "" {
+					s = s.Next()
+					m.Year = s.First().Text()
+				}
+
+			case "Duración":
+				if overwrite || m.Duration == "" {
+					s = s.Next()
+					m.Duration = s.First().Text()
+				}
+
+			case "País":
+				if overwrite || m.Country == "" {
+					s = s.Next()
+					m.Country = s.First().Text()
+				}
+			case "Director":
+				if overwrite || m.Director == "" {
+					s = s.Next()
+					m.Director = s.First().Text()
+				}
+			case "Guión":
+				if overwrite || m.Writer == "" {
+					s = s.Next()
+					m.Writer = s.First().Text()
+				}
+			case "Género":
+				if overwrite || m.Genre == "" {
+					s = s.Next()
+
+					s.Find("a").Each(func(i int, s *goquery.Selection) {
+						m.Genre = strings.Join([]string{m.Genre, s.First().Text()}, "|")
+					})
+				}
+			case "Sinopsis":
+				if overwrite || m.Plot == "" {
+					s = s.Next()
+					m.Plot = strings.TrimRight(s.First().Text(), " \n")
+				}
+			case "Web oficial":
+				if overwrite || m.Web == "" {
+					s = s.Next()
+					m.Web, _ = s.Attr("href")
+				}
+			}
+		})
+
+		if overwrite || m.FilmAffinityId == "" {
+			m.FilmAffinityId, _ = doc.Find("div.rate-movie-box").Attr("data-movie-id")
+		}
+
+		if overwrite || m.OriginalTitle == "" {
+			title := doc.Find("dd").Eq(0).Text()
+			m.OriginalTitle = cleanTitle(title)
+		}
+
 	}
 }
 
-func cleanTitle(title string) string {
-
-	cleanTitleByte := []byte(title)
-	parenthesesExpr, _ := regexp.Compile("\\(.*?\\)")
-	bracketsExpr, _ := regexp.Compile("\\[.*?\\]")
-
-	cleanTitleByte = parenthesesExpr.ReplaceAll(cleanTitleByte, []byte(""))
-	cleanTitleByte = bracketsExpr.ReplaceAll(cleanTitleByte, []byte(""))
-
-	cleanTitleStr := string(cleanTitleByte)
-
-	cleanTitleStr = strings.TrimFunc(cleanTitleStr, func(r rune) bool {
-		if r == ' ' || r == '\n' || r == '\t' {
-			return true
-		} else {
-			return false
-		}
-	})
-	return cleanTitleStr
-}
-
-//public Movie enrichMovieWithFilmAffinity(Movie movie) {
-//        try {
-//            String url = "http://www.filmaffinity.com/es/search.php?stext={title}&stype=all";
-//            String title = URLEncoder.encode(movie.getTitle(), "UTF8");
-//            url = url.replace("{title}", title);
-//            Document doc = Jsoup.connect(url).get();
-//            if (doc.select("[property=og:title]").size() == 0) {
-//                // several results found, take the first
-//                Element firstResult = doc.select(".item-search .mc-title a").first();
-//                if (firstResult == null) {
-//                    // filmaffinity search engine failed
-//                    log.warn("FilmAffinity 404: " + movie.getTitle());
-//                    return movie;
-//                }
-//                url = "http://www.filmaffinity.com" + firstResult.attr("href");
-//                doc = Jsoup.connect(url).get();
-//            }
-//            movie.setFilmAffinityId(doc.select("div.rate-movie-box").attr("data-movie-id"));
-//            Elements movieInfo = doc.select("dl.movie-info");
-//            String originalTitle = movieInfo.select("dd").eq(0).text();
-//            originalTitle = originalTitle
-//                    .replaceAll("\\([^\\(]*\\)", "")
-//                    .replaceAll("\\[[^\\(]*\\]", "")
-//                    .replaceAll("aka$", "")
-//                    .trim();
-//            movie.setOriginalTitle(originalTitle);
-//            movie.setDescription(movieInfo.select("dd").eq(11).text());
-//        } catch (IOException ex) {
-//            log.warn(ex.getMessage());
-//        }
-//        return movie;
-//    }
-
-func (m *Movie) EnrichWithImdbSearch() {
+func (m *Movie) EnrichWithImdbSearch(overwrite bool) {
 	var title string
 
 	if m.OriginalTitle != "" {
@@ -357,17 +404,29 @@ func (m *Movie) EnrichWithImdbSearch() {
 			return true
 		})
 
-		m.ImdbUrl = IMDBUrl + link
+		if overwrite || m.ImdbUrl == "" {
+			m.ImdbUrl = IMDBUrl + link
+		}
 
-		m.ImdbId = link[len("/title/") : len(link)-1]
+		if overwrite || m.ImdbId == "" {
+			m.ImdbId = link[len("/title/") : len(link)-1]
+		}
 
 		if doc, err = goquery.NewDocument(m.ImdbUrl); err != nil {
 			log.Fatal(err)
 		} else {
-			m.Genre = doc.Find("[itemprop=genre]").Eq(0).Text()
-			m.ImdbRating = doc.Find("[itemprop=aggregateRating]").Find("[itemprop=ratingValue]").Text()
-			m.Director = doc.Find("[itemprop=director]").Find("[itemprop=name]").Text()
-			m.Duration = doc.Find("[itemprop=duration]").Last().Text()
+			if overwrite || m.Genre == "" {
+				m.Genre = doc.Find("[itemprop=genre]").Eq(0).Text()
+			}
+			if overwrite || m.ImdbRating == "" {
+				m.ImdbRating = doc.Find("[itemprop=aggregateRating]").Find("[itemprop=ratingValue]").Text()
+			}
+			if overwrite || m.Director == "" {
+				m.Director = doc.Find("[itemprop=director]").Find("[itemprop=name]").Text()
+			}
+			if overwrite || m.Duration == "" {
+				m.Duration = doc.Find("[itemprop=duration]").Last().Text()
+			}
 		}
 	}
 }

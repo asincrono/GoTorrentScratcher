@@ -2,8 +2,11 @@
 package main
 
 import (
+	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -38,7 +41,7 @@ func showNodeInfo(node *html.Node) {
 	}
 }
 
-func getRecordPaths(page uint16) (paths []string) {
+func getRecordPaths(page uint) (paths []string) {
 	url := strings.Join([]string{EliteTorrentURL, CategoriaHDRIP, ModeList, OrderScore, Page}, "/")
 	url = fmt.Sprintf("%s%d", url, page)
 
@@ -131,44 +134,77 @@ func getMovie(path string) (movie movie.Movie) {
 }
 
 func main() {
+	var imdb bool
+	var filmaffinity bool
+	var omdb bool
+	var overwrite bool
+	var iniPage uint
+	var finalPage uint
+
+	var outFileName string
+
+	flag.BoolVar(&imdb, "imdb", false, "Se intentará obtener la información de la película de IMDB.")
+	flag.BoolVar(&filmaffinity, "filmaffinity", false, "Se intentará obtener la información de la película de Filmaffinity.")
+	flag.BoolVar(&omdb, "omdb", true, "Se intentará obtener la información de la película de OMDB.")
+
+	flag.BoolVar(&overwrite, "overwrite", false, "Se sobreescribirán los datos de la película con cada intento de obtención de información.")
+
+	flag.UintVar(&iniPage, "ip", 1, "Página desde la que empezar a obtener películas.")
+	flag.UintVar(&finalPage, "fp", 0, "Página hasta la que obtener películas.")
+
+	flag.StringVar(&outFileName, "o", "movies", "Nombre del fichero (.json) de salida.")
+
+	flag.Parse()
+
 	var m movie.Movie
-	//	var page uint16
-	//	var paths []string
-	//	var jsonMovieRaw []byte
+
+	var page uint
+	var paths []string
+	var jsonMovieRaw []byte
 
 	//fileName := ".\\movies.json"
-	//	fileName := "./movies.json"
 
-	//	file, err := os.OpenFile(fileName, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
-	//	if err != nil {
-	//		log.Fatal(err)
-	//	}
+	fileName := "./" + outFileName + ".json"
 
-	m.OriginalTitle = "Love"
-	m.EnrichWithFilmAffinity()
-	fmt.Printf("%+v\n", m)
-	//	page = 1
-	//	for {
-	//		paths = getRecordPaths(page)
-	//		if len(paths) == 0 {
-	//			break
-	//		}
+	file, err := os.OpenFile(fileName, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	//		// Pruebas
-	//		if page == 3 {
-	//			break
-	//		}
+	//	m.OriginalTitle = "Love"
+	//	m.EnrichWithFilmAffinity(true)
+	//	fmt.Printf("%+v\n", m)
 
-	//		for _, path := range paths {
-	//			m = getMovie(path)
+	page = iniPage
+	for {
+		paths = getRecordPaths(page)
+		if len(paths) == 0 {
+			break
+		}
 
-	//			m.EnrichWithImdbSearch()
-	//			m.EnrichWithOmdbApi()
+		for _, path := range paths {
+			m = getMovie(path)
 
-	//			jsonMovieRaw, _ = json.Marshal(m)
-	//			fmt.Fprintln(file, string(jsonMovieRaw))
-	//		}
+			if imdb {
+				m.EnrichWithImdbSearch(overwrite)
+			}
 
-	//		page += 1
-	//	}
+			if filmaffinity {
+				m.EnrichWithFilmAffinity(overwrite)
+			}
+
+			if omdb {
+				m.EnrichWithOmdbApi()
+			}
+
+			jsonMovieRaw, _ = json.Marshal(m)
+			fmt.Fprintln(file, string(jsonMovieRaw))
+		}
+
+		page += 1
+
+		if finalPage != 0 && page >= finalPage {
+			break
+		}
+	}
 }
