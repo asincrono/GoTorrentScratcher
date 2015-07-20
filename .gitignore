@@ -4,6 +4,9 @@ bin/
 #pkg dir
 pkg
 
+#no .exe
+*.exe
+
 #binary files in the src dir
 src/torrentscratcher/torrentscratcher
 

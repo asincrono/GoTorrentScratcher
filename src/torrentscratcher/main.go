@@ -45,7 +45,7 @@ func getRecordPaths(page uint) (paths []string) {
 	url := strings.Join([]string{EliteTorrentURL, CategoriaHDRIP, ModeList, OrderScore, Page}, "/")
 	url = fmt.Sprintf("%s%d", url, page)
 
-	fmt.Println("url = ", url)
+	fmt.Println("(getRecordPaths) url = ", url)
 
 	if res, err := http.Get(url); err != nil {
 		log.Fatal(err)
@@ -86,7 +86,7 @@ func removeParenthesesAndBracketsContent(s string) (out string) {
 	return
 }
 
-func getMovie(path string) (movie movie.Movie) {
+func getMovie(path string) (m movie.Movie) {
 	url := EliteTorrentURL + path
 	log.Println("Retrieving", path+".")
 
@@ -100,17 +100,17 @@ func getMovie(path string) (movie movie.Movie) {
 			log.Fatal(err)
 		}
 
-		movie.Url = url
+		m.Url = url
 
 		title := doc.Find("#box-ficha > h2").Text()
 
-		movie.Title = removeParenthesesAndBracketsContent(title)
-		movie.Description = doc.Find("p.descrip").Eq(1).Text()
-		movie.Rating = doc.Find("span.valoracion").Text()
+		m.Title = movie.CleanTitle(title)
+		m.Description = doc.Find("p.descrip").Eq(1).Text()
+		m.Rating = doc.Find("span.valoracion").Text()
 
 		imgName, _ := doc.Find("img.imagen_ficha").Attr("src")
 
-		movie.Image = EliteTorrentURL + imgName
+		m.Image = EliteTorrentURL + imgName
 
 		var torrent torrent.Torrent
 
@@ -127,7 +127,7 @@ func getMovie(path string) (movie movie.Movie) {
 		torrent.Seeds = uint16(seeds)
 		torrent.Peers = uint16(peers)
 
-		movie.AddTorrent("720p", &torrent)
+		m.AddTorrent("720p", &torrent)
 	}
 
 	return
@@ -202,6 +202,8 @@ func main() {
 		}
 
 		page += 1
+
+		fmt.Println("Page:", page)
 
 		if finalPage != 0 && page >= finalPage {
 			break
