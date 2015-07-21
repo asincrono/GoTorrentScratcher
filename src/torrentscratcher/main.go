@@ -20,6 +20,7 @@ import (
 	"golang.org/x/net/html"
 )
 
+// URLs and URL's append string to select different search modes.
 const (
 	FilmAffinityURL = "http://www.filmaffinity.com"
 	IMDBURL         = "http://www.imdb.com/"
@@ -186,7 +187,7 @@ func main() {
 			m = getMovie(path)
 
 			if imdb {
-				m.EnrichWithImdbSearch(overwrite)
+				//m.EnrichWithImdbSearch(overwrite)
 			}
 
 			if filmaffinity {
@@ -201,7 +202,7 @@ func main() {
 			fmt.Fprintln(file, string(jsonMovieRaw))
 		}
 
-		page += 1
+		page++
 
 		fmt.Println("Page:", page)
 
